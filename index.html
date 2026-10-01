@@ -91,19 +91,19 @@
 
     <!-- ============ AJUSTES ============ -->
     <section id="view-settings" class="view">
+      <div class="card form">
+        <h3>Mis tarjetas</h3>
+        <p class="muted small">Toca una tarjeta para cambiar su nombre, color, fechas o presupuesto, o para eliminarla.</p>
+        <ul id="set-cards" class="card-admin"></ul>
+        <button type="button" id="add-card-btn">＋ Agregar tarjeta</button>
+      </div>
+
       <form id="settings-form" class="card form">
         <label class="field">
           <span>Tipo de cambio (Q por $1)</span>
           <input id="set-rate" type="text" inputmode="decimal">
         </label>
-        <label class="field">
-          <span>Día de pago (todas las tarjetas)</span>
-          <input id="set-pago" type="number" min="1" max="28">
-        </label>
-        <h3>Corte y presupuesto por tarjeta</h3>
-        <p class="muted small">El presupuesto es opcional: si lo llenas, verás cuánto te queda en cada ciclo.</p>
-        <div id="set-cards"></div>
-        <button type="submit" class="primary">Guardar ajustes</button>
+        <button type="submit" class="primary">Guardar tipo de cambio</button>
       </form>
 
       <div class="card form">
@@ -143,6 +143,41 @@
         <button type="button" id="edit-delete" class="danger">Eliminar</button>
         <span class="spacer"></span>
         <button type="button" id="edit-cancel">Cancelar</button>
+        <button type="submit" class="primary">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Agregar / editar tarjeta -->
+  <dialog id="card-dialog">
+    <form id="card-form" class="form" method="dialog">
+      <h3 id="card-dialog-title">Nueva tarjeta</h3>
+      <label class="field">
+        <span>Nombre</span>
+        <input id="card-name" type="text" required maxlength="30" placeholder="Ej. BI Mastercard">
+      </label>
+      <div class="field">
+        <span>Color</span>
+        <div id="card-colors" class="swatches" role="radiogroup" aria-label="Color"></div>
+      </div>
+      <div class="two-cols">
+        <label class="field">
+          <span>Día de corte</span>
+          <input id="card-corte" type="number" min="1" max="31" required inputmode="numeric">
+        </label>
+        <label class="field">
+          <span>Día de pago</span>
+          <input id="card-pago" type="number" min="1" max="31" required inputmode="numeric">
+        </label>
+      </div>
+      <label class="field">
+        <span>Presupuesto por ciclo (Q, opcional)</span>
+        <input id="card-budget" type="text" inputmode="decimal" placeholder="opcional">
+      </label>
+      <div class="dialog-actions">
+        <button type="button" id="card-delete" class="danger">Eliminar</button>
+        <span class="spacer"></span>
+        <button type="button" id="card-cancel">Cancelar</button>
         <button type="submit" class="primary">Guardar</button>
       </div>
     </form>

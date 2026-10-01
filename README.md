@@ -7,14 +7,11 @@ App web (instalable en el teléfono, funciona sin internet) para registrar los g
 - **Registro rápido**: monto (en quetzales por defecto; toca la **Q** para cambiar a **$**), descripción, tarjeta y fecha (hoy por defecto).
   - Puedes escribir sumas en el monto, p. ej. `285+285`.
   - Las descripciones que ya usaste se autocompletan y sugieren la misma tarjeta.
-- **Tarjetas**: Cuscatlán, BAC Credomatic, PriceSmart, BI Mastercard y BI Platinum.
-- **Ciclos automáticos** según tu fecha de corte, sin tener que "cerrar" el mes:
-  - Corte **22**: Cuscatlán, BI Mastercard, BI Platinum → ciclo 23 del mes anterior al 22.
-  - Corte **24**: BAC Credomatic, PriceSmart → ciclo 25 del mes anterior al 24.
-  - Pago **15** del mes siguiente al corte, para todas.
+- **Tarjetas editables** (Ajustes → Mis tarjetas): agrega, edita o elimina tarjetas; cada una con su nombre, color, día de corte, día de pago y presupuesto opcional. Vienen precargadas Cuscatlán, BAC Credomatic, PriceSmart, BI Mastercard y BI Platinum.
+- **Ciclos automáticos** según la fecha de corte de cada tarjeta, sin tener que "cerrar" el mes. Por ejemplo, con corte **22** y pago **15**: el ciclo va del 23 de un mes al 22 del siguiente y se paga el 15 del mes después. El pago es siempre la primera fecha con ese día después del corte.
 - **Detalle por tarjeta**: total del ciclo, lista de rubros, gráfica de los últimos 6 ciclos y navegación a ciclos anteriores.
-- **Historial por mes de pago**: tabla con lo que pagaste/vas a pagar cada 15, por tarjeta.
-- **Recordatorios**: cuando faltan 3 días o menos para un corte o para el pago, aparece un aviso discreto en la pantalla de nuevo gasto (con el total que llevas o el total a pagar).
+- **Historial por mes de pago**: tabla con lo que pagaste/vas a pagar cada mes, por tarjeta.
+- **Recordatorios por tarjeta**: cuando faltan 3 días o menos para el corte o el pago de una tarjeta, aparece un aviso discreto en la pantalla de nuevo gasto (con lo que llevas en el ciclo o el total a pagar).
 - **Presupuesto opcional** por tarjeta para ver "Restante: Q__ de Q__".
 - **Gastos en dólares**: se guardan en $ con el tipo de cambio del día (configurable en Ajustes) y se suman en quetzales.
 - **Respaldo**: descarga/restaura un `.json` y exporta a CSV para Excel.

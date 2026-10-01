@@ -6,19 +6,19 @@
 
 const STORAGE_KEY = 'mis-gastos.v1';
 
-const CARDS = [
-  { id: 'cuscatlan',   name: 'Cuscatlán',      color: '#0d9488', corte: 22 },
-  { id: 'bac',         name: 'BAC Credomatic', color: '#dc2626', corte: 24 },
-  { id: 'pricesmart',  name: 'PriceSmart',     color: '#2563eb', corte: 24 },
-  { id: 'bi-mc',       name: 'BI Mastercard',  color: '#ea580c', corte: 22 },
-  { id: 'bi-platinum', name: 'BI Platinum',    color: '#7c3aed', corte: 22 },
+// Tarjetas iniciales; después se pueden editar, agregar o eliminar en Ajustes.
+const DEFAULT_CARDS = [
+  { id: 'cuscatlan',   name: 'Cuscatlán',      color: '#0d9488', corte: 22, pago: 15 },
+  { id: 'bac',         name: 'BAC Credomatic', color: '#dc2626', corte: 24, pago: 15 },
+  { id: 'pricesmart',  name: 'PriceSmart',     color: '#2563eb', corte: 24, pago: 15 },
+  { id: 'bi-mc',       name: 'BI Mastercard',  color: '#ea580c', corte: 22, pago: 15 },
+  { id: 'bi-platinum', name: 'BI Platinum',    color: '#7c3aed', corte: 22, pago: 15 },
 ];
+
+const COLORS = ['#0d9488', '#dc2626', '#2563eb', '#ea580c', '#7c3aed', '#16a34a', '#db2777', '#ca8a04', '#0891b2', '#475569'];
 
 const DEFAULT_SETTINGS = {
   rate: 7.70,      // Q por $1
-  pagoDay: 15,
-  cortes: Object.fromEntries(CARDS.map(c => [c.id, c.corte])),
-  budgets: {},     // { cardId: monto en Q }
   lastCard: null,
 };
 
@@ -41,15 +41,44 @@ function normalize(data) {
   data = data && typeof data === 'object' ? data : {};
   const s = data.settings || {};
   return {
-    version: 1,
+    version: 2,
     settings: {
       ...DEFAULT_SETTINGS,
-      ...s,
-      cortes: { ...DEFAULT_SETTINGS.cortes, ...(s.cortes || {}) },
-      budgets: { ...(s.budgets || {}) },
+      rate: Number(s.rate) > 0 ? Number(s.rate) : DEFAULT_SETTINGS.rate,
+      lastCard: s.lastCard || null,
+      cards: normalizeCards(s),
     },
     expenses: Array.isArray(data.expenses) ? data.expenses.filter(e => e && e.id && e.card && e.date) : [],
   };
+}
+
+/** Tarjetas guardadas; migra el formato anterior (cortes, pago y presupuestos globales). */
+function normalizeCards(s) {
+  if (Array.isArray(s.cards)) {
+    return s.cards
+      .filter(c => c && c.id && c.name)
+      .map(c => ({
+        id: String(c.id),
+        name: String(c.name),
+        color: c.color || COLORS[0],
+        corte: clampInt(c.corte, 1, 31, 22),
+        pago: clampInt(c.pago, 1, 31, 15),
+        budget: Number(c.budget) > 0 ? Number(c.budget) : null,
+      }));
+  }
+  const cortes = s.cortes || {};
+  const budgets = s.budgets || {};
+  return DEFAULT_CARDS.map(c => ({
+    ...c,
+    corte: clampInt(cortes[c.id], 1, 31, c.corte),
+    pago: clampInt(s.pagoDay, 1, 31, c.pago),
+    budget: Number(budgets[c.id]) > 0 ? Number(budgets[c.id]) : null,
+  }));
+}
+
+function clampInt(v, min, max, fallback) {
+  const n = Math.round(Number(v));
+  return n >= min && n <= max ? n : fallback;
 }
 
 function save() {
@@ -60,7 +89,9 @@ function save() {
   }
 }
 
-const cardById = id => CARDS.find(c => c.id === id);
+const cards = () => db.settings.cards;
+const DELETED_CARD = { id: '', name: 'Tarjeta eliminada', color: '#94a3b8', corte: 22, pago: 15, budget: null };
+const cardById = id => cards().find(c => c.id === id) || { ...DELETED_CARD, id };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 /** Monto del gasto expresado en quetzales. */
@@ -70,8 +101,9 @@ const inQ = e => (e.currency === 'USD' ? e.amount * (e.rate || db.settings.rate)
    Fechas y ciclos de facturación
    ---------------------------------------------------------
    Un ciclo se identifica por el mes de su fecha de corte ("2026-10").
-   Para una tarjeta con corte el 22:
+   Para una tarjeta con corte el 22 y pago el 15:
      ciclo "2026-10" = 23 sep → 22 oct, se paga el 15 nov.
+   Cada tarjeta tiene su propio día de corte y de pago.
    ========================================================= */
 
 const pad = n => String(n).padStart(2, '0');
@@ -99,7 +131,7 @@ function addMonths(key, n) {
 
 function dateObj(y, m, d) { return new Date(y, m - 1, d); }
 
-function corteDay(cardId) { return db.settings.cortes[cardId] || cardById(cardId).corte; }
+const corteDay = cardId => cardById(cardId).corte;
 
 /** Ciclo (mes de corte) al que pertenece un gasto hecho en `dateStr`. */
 function cycleKeyFor(cardId, dateStr) {
@@ -108,14 +140,30 @@ function cycleKeyFor(cardId, dateStr) {
   return d <= corte ? monthKey(y, m) : addMonths(monthKey(y, m), 1);
 }
 
+/** El pago es la primera fecha con el día de pago de la tarjeta posterior al corte. */
 function cycleInfo(cardId, key) {
+  const card = cardById(cardId);
   const [y, m] = key.split('-').map(Number);
-  const corte = dateObj(y, m, clampDay(y, m, corteDay(cardId)));
+  const corte = dateObj(y, m, clampDay(y, m, card.corte));
   const [py, pm] = addMonths(key, -1).split('-').map(Number);
-  const start = dateObj(py, pm, clampDay(py, pm, corteDay(cardId)) + 1);
-  const [ny, nm] = addMonths(key, 1).split('-').map(Number);
-  const pago = dateObj(ny, nm, clampDay(ny, nm, db.settings.pagoDay));
+  const start = dateObj(py, pm, clampDay(py, pm, card.corte) + 1);
+  let pago = dateObj(y, m, clampDay(y, m, card.pago));
+  if (pago <= corte) {
+    const [ny, nm] = addMonths(key, 1).split('-').map(Number);
+    pago = dateObj(ny, nm, clampDay(ny, nm, card.pago));
+  }
   return { start, corte, pago };
+}
+
+/** Mes ("2026-11") en que se paga el ciclo `key`. */
+function pagoKeyOf(cardId, key) {
+  const { pago } = cycleInfo(cardId, key);
+  return monthKey(pago.getFullYear(), pago.getMonth() + 1);
+}
+
+/** Ciclo que se paga en el mes `pagoKey`, o null si ninguno cae ahí. */
+function cycleKeyForPago(cardId, pagoKey) {
+  return [pagoKey, addMonths(pagoKey, -1)].find(k => pagoKeyOf(cardId, k) === pagoKey) || null;
 }
 
 const fmtDay = d => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
@@ -126,13 +174,6 @@ const fmtDateStr = s => { const { y, m, d } = parseDate(s); return fmtDay(dateOb
 function daysBetween(a, b) {
   return Math.round((dateObj(b.getFullYear(), b.getMonth() + 1, b.getDate()) -
                      dateObj(a.getFullYear(), a.getMonth() + 1, a.getDate())) / 86400000);
-}
-
-/** Próxima fecha (hoy incluido) que cae en el día `day` del mes. */
-function nextOccurrence(day, from = new Date()) {
-  let y = from.getFullYear(), m = from.getMonth() + 1;
-  if (from.getDate() > clampDay(y, m, day)) { m++; if (m > 12) { m = 1; y++; } }
-  return dateObj(y, m, clampDay(y, m, day));
 }
 
 /* =========================================================
@@ -205,7 +246,12 @@ function toast(msg) {
 }
 
 function renderCardPicker(container, selected, onPick) {
-  container.replaceChildren(...CARDS.map(c => el('button', {
+  if (!cards().length) {
+    container.replaceChildren(el('button', { type: 'button', class: 'link', onclick: () => go('settings') },
+      'No tienes tarjetas. Toca aquí para agregar una.'));
+    return;
+  }
+  container.replaceChildren(...cards().map(c => el('button', {
     type: 'button',
     class: 'chip',
     role: 'radio',
@@ -275,6 +321,7 @@ const form = {
 function renderAdd() {
   renderReminders();
   renderSuggestions();
+  if (!cards().some(c => c.id === form.card)) form.card = null;
   renderCardPicker($('#card-picker'), form.card, id => { form.card = id; });
   if (!$('#date').value) $('#date').value = todayStr();
   setCurrencyButton($('#currency-toggle'), form.currency);
@@ -286,29 +333,30 @@ function renderAdd() {
     : [el('li', { class: 'empty' }, 'Aún no hay gastos registrados')]));
 }
 
+/** Avisos cuando faltan 3 días o menos para el corte o el pago de cada tarjeta. */
 function renderReminders() {
   const today = new Date();
   const notes = [];
 
-  // Cortes: agrupa tarjetas por día de corte
-  const groups = {};
-  for (const c of CARDS) (groups[corteDay(c.id)] ||= []).push(c);
-  for (const [day, cards] of Object.entries(groups)) {
-    const date = nextOccurrence(Number(day), today);
-    const diff = daysBetween(today, date);
-    if (diff > 3) continue;
-    const names = listNames(cards.map(c => c.name));
-    const total = cards.reduce((sum, c) => sum + cycleTotals(expensesInCycle(c.id, currentCycle(c.id))).q, 0);
-    notes.push({ diff, text: `${whenText(diff, date)} es el corte de ${names}. Llevas ${fmtQ(total)} en este ciclo.` });
-  }
+  for (const c of cards()) {
+    const cur = currentCycle(c.id);
+    const info = cycleInfo(c.id, cur);
 
-  // Pago: mismo día para todas
-  const pagoDate = nextOccurrence(db.settings.pagoDay, today);
-  const pagoDiff = daysBetween(today, pagoDate);
-  if (pagoDiff <= 3) {
-    const pagoKey = monthKey(pagoDate.getFullYear(), pagoDate.getMonth() + 1);
-    const due = totalForPagoMonth(pagoKey);
-    notes.push({ diff: pagoDiff, text: `${whenText(pagoDiff, pagoDate)} es la fecha de pago de tus tarjetas. Total a pagar: ${fmtQ(due)}.` });
+    const corteDiff = daysBetween(today, info.corte);
+    if (corteDiff <= 3) {
+      const total = cycleTotals(expensesInCycle(c.id, cur)).q;
+      notes.push({ diff: corteDiff, text: `${whenText(corteDiff, info.corte)} es el corte de ${c.name}. Llevas ${fmtQ(total)} en este ciclo.` });
+    }
+
+    // El próximo pago puede ser del ciclo anterior (ya cortado) o del actual.
+    const prev = addMonths(cur, -1);
+    const prevPago = cycleInfo(c.id, prev).pago;
+    const [pagoKey, pagoDate] = daysBetween(today, prevPago) >= 0 ? [prev, prevPago] : [cur, info.pago];
+    const pagoDiff = daysBetween(today, pagoDate);
+    const due = pagoDiff <= 3 ? cycleTotals(expensesInCycle(c.id, pagoKey)).q : 0;
+    if (due > 0) {
+      notes.push({ diff: pagoDiff, text: `${whenText(pagoDiff, pagoDate)} es el pago de ${c.name}. Total a pagar: ${fmtQ(due)}.` });
+    }
   }
 
   notes.sort((a, b) => a.diff - b.diff);
@@ -319,10 +367,6 @@ function whenText(diff, date) {
   if (diff === 0) return 'Hoy';
   if (diff === 1) return `Mañana (${fmtDayLong(date)})`;
   return `En ${diff} días (${fmtDayLong(date)})`;
-}
-
-function listNames(names) {
-  return names.length > 1 ? `${names.slice(0, -1).join(', ')} y ${names[names.length - 1]}` : names[0];
 }
 
 function renderSuggestions() {
@@ -411,14 +455,9 @@ $('#expense-form').addEventListener('submit', ev => {
    Vista: Tarjetas
    ========================================================= */
 
-function totalForPagoMonth(pagoKey) {
-  const corteKey = addMonths(pagoKey, -1);
-  return CARDS.reduce((sum, c) => sum + cycleTotals(expensesInCycle(c.id, corteKey)).q, 0);
-}
-
 function renderCards() {
   let grand = 0;
-  $('#card-summary').replaceChildren(...CARDS.map(c => {
+  $('#card-summary').replaceChildren(...cards().map(c => {
     const key = currentCycle(c.id);
     const { q } = cycleTotals(expensesInCycle(c.id, key));
     const info = cycleInfo(c.id, key);
@@ -431,31 +470,38 @@ function renderCards() {
       el('span', { class: 'total' }, fmtQ(q)),
       el('span', { class: 'range' }, `${fmtDay(info.start)} – ${fmtDay(info.corte)} · paga ${fmtDay(info.pago)}`));
   }));
+  if (!cards().length) {
+    $('#card-summary').replaceChildren(el('button', { type: 'button', class: 'link', onclick: () => go('settings') },
+      'No tienes tarjetas. Agrega una en Ajustes.'));
+  }
   $('#grand-total').textContent = fmtQ(grand);
   renderHistoryTable();
 }
 
+/** Tabla por mes de pago: cada celda es el ciclo de esa tarjeta que se paga ese mes. */
 function renderHistoryTable() {
-  // Meses de pago con datos + el mes de pago actual
   const keys = new Set();
-  for (const e of db.expenses) keys.add(addMonths(cycleKeyFor(e.card, e.date), 1));
-  for (const c of CARDS) keys.add(addMonths(currentCycle(c.id), 1));
+  for (const e of db.expenses) {
+    if (cards().some(c => c.id === e.card)) keys.add(pagoKeyOf(e.card, cycleKeyFor(e.card, e.date)));
+  }
+  for (const c of cards()) keys.add(pagoKeyOf(c.id, currentCycle(c.id)));
   const sorted = [...keys].sort().reverse();
 
   const head = el('thead', {}, el('tr', {},
-    el('th', {}, 'Pago 15'),
-    CARDS.map(c => el('th', {}, c.name.replace('Credomatic', '').trim())),
+    el('th', {}, 'Mes de pago'),
+    cards().map(c => el('th', {}, c.name.replace('Credomatic', '').trim())),
     el('th', {}, 'Total')));
 
   const body = el('tbody', {}, sorted.map(pagoKey => {
-    const corteKey = addMonths(pagoKey, -1);
     let total = 0;
-    const cells = CARDS.map(c => {
-      const q = cycleTotals(expensesInCycle(c.id, corteKey)).q;
+    const cells = cards().map(c => {
+      const key = cycleKeyForPago(c.id, pagoKey);
+      if (!key) return el('td', {}, '–');
+      const q = cycleTotals(expensesInCycle(c.id, key)).q;
       total += q;
       return el('td', {}, el('button', {
         type: 'button', class: 'link', style: 'padding:0',
-        onclick: () => openDetail(c.id, corteKey),
+        onclick: () => openDetail(c.id, key),
       }, q ? nf.format(q) : '–'));
     });
     return el('tr', {}, el('td', {}, fmtMonthKey(pagoKey)), cells, el('td', { class: 'total' }, nf.format(total)));
@@ -480,7 +526,7 @@ $('#cycle-prev').addEventListener('click', () => { detail.key = addMonths(detail
 $('#cycle-next').addEventListener('click', () => { detail.key = addMonths(detail.key, 1); renderDetail(); });
 
 function renderDetail() {
-  const card = cardById(detail.card);
+  const card = cards().find(c => c.id === detail.card);
   if (!card) return go('cards');
   const list = expensesInCycle(card.id, detail.key);
   const { q, usd } = cycleTotals(list);
@@ -495,7 +541,7 @@ function renderDetail() {
   $('#detail-sub').textContent =
     `${list.length} gasto${list.length === 1 ? '' : 's'}${usd ? ` · incluye ${fmtUSD(usd)} en dólares` : ''}`;
 
-  const budget = Number(db.settings.budgets[card.id]) || 0;
+  const budget = card.budget || 0;
   const box = $('#detail-budget');
   box.hidden = !budget;
   if (budget) {
@@ -587,35 +633,98 @@ $('#edit-delete').addEventListener('click', () => {
 
 function renderSettings() {
   $('#set-rate').value = db.settings.rate;
-  $('#set-pago').value = db.settings.pagoDay;
-  $('#set-cards').replaceChildren(
-    el('div', { class: 'set-card set-head' }, el('span', {}, 'Tarjeta'), el('span', {}, 'Corte'), el('span', {}, 'Presupuesto Q')),
-    ...CARDS.map(c => el('div', { class: 'set-card' },
-      el('span', {}, c.name),
-      el('input', { type: 'number', min: 1, max: 31, value: corteDay(c.id), 'data-corte': c.id, 'aria-label': `Día de corte ${c.name}` }),
-      el('input', { type: 'text', inputmode: 'decimal', placeholder: 'opcional', value: db.settings.budgets[c.id] || '', 'data-budget': c.id, 'aria-label': `Presupuesto ${c.name}` }))));
+  $('#set-cards').replaceChildren(...cards().map(c => el('li', { style: `--c:${c.color}`, onclick: () => openCardEditor(c.id) },
+    el('div', { class: 'main' },
+      el('div', {}, c.name),
+      el('div', { class: 'meta' },
+        `Corte ${c.corte} · Pago ${c.pago}${c.budget ? ` · Presupuesto ${fmtQ(c.budget)}` : ''}`)),
+    el('span', { class: 'chev', 'aria-hidden': 'true' }, '›'))));
+  if (!cards().length) $('#set-cards').replaceChildren(el('li', { class: 'muted small' }, 'Aún no tienes tarjetas.'));
 }
 
 $('#settings-form').addEventListener('submit', ev => {
   ev.preventDefault();
   const rate = parseAmount($('#set-rate').value);
-  const pago = Number($('#set-pago').value);
   if (isNaN(rate) || rate <= 0) { toast('Tipo de cambio inválido'); return; }
-  if (!(pago >= 1 && pago <= 28)) { toast('Día de pago entre 1 y 28'); return; }
   db.settings.rate = rate;
-  db.settings.pagoDay = pago;
-  document.querySelectorAll('[data-corte]').forEach(inp => {
-    const v = Number(inp.value);
-    if (v >= 1 && v <= 31) db.settings.cortes[inp.dataset.corte] = v;
-  });
-  document.querySelectorAll('[data-budget]').forEach(inp => {
-    const v = parseAmount(inp.value);
-    if (!isNaN(v) && v > 0) db.settings.budgets[inp.dataset.budget] = v;
-    else delete db.settings.budgets[inp.dataset.budget];
-  });
   save();
-  toast('Ajustes guardados');
+  toast('Tipo de cambio guardado');
   renderSettings();
+});
+
+/* ---------- Agregar / editar / eliminar tarjetas ---------- */
+
+const cardEdit = { id: null, color: COLORS[0] };
+
+function renderSwatches() {
+  $('#card-colors').replaceChildren(...COLORS.map(color => el('button', {
+    type: 'button', class: 'swatch', role: 'radio', style: `--c:${color}`,
+    'aria-checked': String(color === cardEdit.color), 'aria-label': color,
+    onclick: () => { cardEdit.color = color; renderSwatches(); },
+  })));
+}
+
+function openCardEditor(id) {
+  const card = id ? cards().find(c => c.id === id) : null;
+  cardEdit.id = card ? card.id : null;
+  // Para una tarjeta nueva, propone un color que aún no se use.
+  cardEdit.color = card ? card.color : (COLORS.find(col => !cards().some(c => c.color === col)) || COLORS[0]);
+  $('#card-dialog-title').textContent = card ? 'Editar tarjeta' : 'Nueva tarjeta';
+  $('#card-name').value = card ? card.name : '';
+  $('#card-corte').value = card ? card.corte : '';
+  $('#card-pago').value = card ? card.pago : '';
+  $('#card-budget').value = card && card.budget ? card.budget : '';
+  $('#card-delete').hidden = !card;
+  renderSwatches();
+  $('#card-dialog').showModal();
+}
+
+$('#add-card-btn').addEventListener('click', () => openCardEditor(null));
+$('#card-cancel').addEventListener('click', () => $('#card-dialog').close());
+
+$('#card-form').addEventListener('submit', ev => {
+  ev.preventDefault();
+  const name = $('#card-name').value.trim();
+  const corte = clampInt($('#card-corte').value, 1, 31, null);
+  const pago = clampInt($('#card-pago').value, 1, 31, null);
+  const budgetRaw = $('#card-budget').value.trim();
+  const budget = budgetRaw ? parseAmount(budgetRaw) : null;
+  if (!name) { toast('Escribe el nombre de la tarjeta'); return; }
+  if (cards().some(c => c.id !== cardEdit.id && c.name.toLowerCase() === name.toLowerCase())) {
+    toast('Ya tienes una tarjeta con ese nombre'); return;
+  }
+  if (!corte) { toast('Día de corte entre 1 y 31'); return; }
+  if (!pago) { toast('Día de pago entre 1 y 31'); return; }
+  if (budgetRaw && (isNaN(budget) || budget <= 0)) { toast('Presupuesto inválido'); return; }
+
+  const data = { name, color: cardEdit.color, corte, pago, budget: budget || null };
+  if (cardEdit.id) {
+    Object.assign(cards().find(c => c.id === cardEdit.id), data);
+  } else {
+    cards().push({ id: uid(), ...data });
+  }
+  save();
+  $('#card-dialog').close();
+  toast(cardEdit.id ? 'Tarjeta actualizada' : 'Tarjeta agregada');
+  render();
+});
+
+$('#card-delete').addEventListener('click', () => {
+  const card = cards().find(c => c.id === cardEdit.id);
+  if (!card) return;
+  const count = db.expenses.filter(e => e.card === card.id).length;
+  const msg = count
+    ? `${card.name} tiene ${count} gasto${count === 1 ? '' : 's'} registrado${count === 1 ? '' : 's'}. ` +
+      'Si la eliminas, también se borrarán esos gastos de tu historial. ¿Eliminarla?'
+    : `¿Eliminar la tarjeta ${card.name}?`;
+  if (!confirm(msg)) return;
+  db.settings.cards = cards().filter(c => c.id !== card.id);
+  db.expenses = db.expenses.filter(e => e.card !== card.id);
+  if (db.settings.lastCard === card.id) db.settings.lastCard = null;
+  save();
+  $('#card-dialog').close();
+  toast('Tarjeta eliminada');
+  render();
 });
 
 function download(filename, content, type) {

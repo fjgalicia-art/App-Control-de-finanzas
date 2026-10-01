@@ -1,5 +1,5 @@
 // Cache para que la app funcione sin internet. Sube la versión al cambiar archivos.
-const CACHE = 'mis-gastos-v1';
+const CACHE = 'mis-gastos-v2';
 const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icon.svg'];
 
 self.addEventListener('install', e => {
