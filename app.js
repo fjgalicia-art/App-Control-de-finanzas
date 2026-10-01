@@ -89,6 +89,65 @@ function save() {
   }
 }
 
+/* =========================================================
+   Nube (Firebase)
+   ---------------------------------------------------------
+   sync.js se conecta con setCloud(). Mientras no haya sesión activa,
+   los cambios se anotan en una cola y se suben al conectar, para que
+   ningún gasto hecho sin internet se pierda.
+   ========================================================= */
+
+const PENDING_KEY = 'mis-gastos.pending';
+const cloud = { ready: false, active: false, unavailable: false };
+let account = null;   // { name, email, photo, status }
+
+function readPending() {
+  try { return JSON.parse(localStorage.getItem(PENDING_KEY)) || []; } catch (_) { return []; }
+}
+
+function writePending(list) {
+  try {
+    if (list.length) localStorage.setItem(PENDING_KEY, JSON.stringify(list));
+    else localStorage.removeItem(PENDING_KEY);
+  } catch (_) { /* sin espacio: el respaldo manual sigue disponible */ }
+}
+
+/** Envía un cambio a la nube, o lo deja en cola si aún no hay sesión. */
+function sync(op) {
+  if (cloud.active) {
+    if (op.type === 'put') cloud.put(db.expenses.find(e => e.id === op.id));
+    else if (op.type === 'remove') cloud.remove(op.id);
+    else if (op.type === 'settings') cloud.putSettings();
+    else if (op.type === 'all') cloud.replaceAll();
+    return;
+  }
+  writePending([...readPending(), op]);
+}
+
+window.App = {
+  get db() { return db; },
+  toast,
+  takePending() { const list = readPending(); writePending([]); return list; },
+  setCloud(impl) { Object.assign(cloud, impl, { ready: true }); renderAccount(); },
+  setCloudUnavailable() { cloud.unavailable = true; renderAccount(); },
+  setActive(active) { cloud.active = active; },
+  setAccount(a) { account = a; renderAccount(); },
+  setSyncStatus(status) { if (account) { account.status = status; renderAccount(); } },
+  /** Reemplaza los datos locales con los de la nube. */
+  applyRemote({ settings, expenses }) {
+    if (settings) db.settings = normalize({ settings: { ...settings, lastCard: db.settings.lastCard } }).settings;
+    if (expenses) db.expenses = normalize({ expenses }).expenses;
+    save();
+    render();
+  },
+  resetLocal() {
+    db = normalize(null);
+    writePending([]);
+    save();
+    render();
+  },
+};
+
 const cards = () => db.settings.cards;
 const DELETED_CARD = { id: '', name: 'Tarjeta eliminada', color: '#94a3b8', corte: 22, pago: 15, budget: null };
 const cardById = id => cards().find(c => c.id === id) || { ...DELETED_CARD, id };
@@ -438,6 +497,7 @@ $('#expense-form').addEventListener('submit', ev => {
   db.expenses.push(expense);
   db.settings.lastCard = form.card;
   save();
+  sync({ type: 'put', id: expense.id });
 
   const card = cardById(form.card);
   const key = cycleKeyFor(card.id, date);
@@ -613,6 +673,7 @@ $('#edit-form').addEventListener('submit', ev => {
   if (edit.currency !== 'USD') e.rate = null;
   Object.assign(e, { amount, desc, currency: edit.currency, card: edit.card, date: $('#edit-date').value });
   save();
+  sync({ type: 'put', id: e.id });
   $('#edit-dialog').close();
   toast('Gasto actualizado');
   render();
@@ -622,6 +683,7 @@ $('#edit-delete').addEventListener('click', () => {
   if (!confirm('¿Eliminar este gasto?')) return;
   db.expenses = db.expenses.filter(x => x.id !== edit.id);
   save();
+  sync({ type: 'remove', id: edit.id });
   $('#edit-dialog').close();
   toast('Gasto eliminado');
   render();
@@ -631,7 +693,46 @@ $('#edit-delete').addEventListener('click', () => {
    Vista: Ajustes
    ========================================================= */
 
+function renderAccount() {
+  const box = $('#account');
+  const pill = $('#sync-pill');
+  const status = account && SYNC_TEXT[account.status];
+  pill.hidden = !account && !cloud.ready;
+  pill.textContent = account ? `☁ ${status ? status.short : ''}` : '☁ Guardar en la nube';
+  pill.dataset.state = account ? account.status : 'off';
+
+  if (account) {
+    box.replaceChildren(
+      el('div', { class: 'account-row' },
+        account.photo ? el('img', { src: account.photo, alt: '', referrerpolicy: 'no-referrer', class: 'avatar' }) : null,
+        el('div', { class: 'main' },
+          el('strong', {}, account.name || 'Tu cuenta'),
+          el('div', { class: 'muted small' }, account.email || ''))),
+      el('p', { class: 'small sync-status', 'data-state': account.status }, status ? status.long : ''),
+      el('button', { type: 'button', onclick: () => cloud.signOut() }, 'Cerrar sesión'));
+  } else if (cloud.ready) {
+    box.replaceChildren(
+      el('h3', {}, 'Guarda tus gastos en tu cuenta'),
+      el('p', { class: 'muted small' },
+        'Inicia sesión con Google para respaldar tus gastos automáticamente y verlos en cualquier teléfono. Solo tú puedes verlos.'),
+      el('button', { type: 'button', class: 'primary google', onclick: () => cloud.signIn() }, 'Iniciar sesión con Google'));
+  } else {
+    box.replaceChildren(el('p', { class: 'muted small' }, cloud.unavailable
+      ? 'Sin conexión: podrás iniciar sesión con Google cuando tengas internet. Tus gastos se siguen guardando en este teléfono.'
+      : 'Conectando…'));
+  }
+}
+
+const SYNC_TEXT = {
+  syncing: { short: 'Sincronizando…', long: 'Sincronizando tus gastos…' },
+  pending: { short: 'Guardando…', long: 'Guardando cambios en la nube…' },
+  offline: { short: 'Sin conexión', long: 'Sin conexión. Tus cambios se guardan aquí y se subirán al reconectar.' },
+  ok: { short: 'Sincronizado', long: '✓ Todo guardado en tu cuenta de Google.' },
+  error: { short: 'Error', long: 'No se pudo sincronizar. Revisa tu conexión; se reintentará solo.' },
+};
+
 function renderSettings() {
+  renderAccount();
   $('#set-rate').value = db.settings.rate;
   $('#set-cards').replaceChildren(...cards().map(c => el('li', { style: `--c:${c.color}`, onclick: () => openCardEditor(c.id) },
     el('div', { class: 'main' },
@@ -648,6 +749,7 @@ $('#settings-form').addEventListener('submit', ev => {
   if (isNaN(rate) || rate <= 0) { toast('Tipo de cambio inválido'); return; }
   db.settings.rate = rate;
   save();
+  sync({ type: 'settings' });
   toast('Tipo de cambio guardado');
   renderSettings();
 });
@@ -704,6 +806,7 @@ $('#card-form').addEventListener('submit', ev => {
     cards().push({ id: uid(), ...data });
   }
   save();
+  sync({ type: 'settings' });
   $('#card-dialog').close();
   toast(cardEdit.id ? 'Tarjeta actualizada' : 'Tarjeta agregada');
   render();
@@ -719,9 +822,12 @@ $('#card-delete').addEventListener('click', () => {
     : `¿Eliminar la tarjeta ${card.name}?`;
   if (!confirm(msg)) return;
   db.settings.cards = cards().filter(c => c.id !== card.id);
+  const removed = db.expenses.filter(e => e.card === card.id);
   db.expenses = db.expenses.filter(e => e.card !== card.id);
   if (db.settings.lastCard === card.id) db.settings.lastCard = null;
   save();
+  sync({ type: 'settings' });
+  removed.forEach(e => sync({ type: 'remove', id: e.id }));
   $('#card-dialog').close();
   toast('Tarjeta eliminada');
   render();
@@ -760,6 +866,7 @@ $('#import-input').addEventListener('change', async ev => {
     if (!confirm(`El respaldo tiene ${data.expenses.length} gastos. Esto reemplazará los datos actuales. ¿Continuar?`)) return;
     db = data;
     save();
+    sync({ type: 'all' });
     toast('Respaldo restaurado');
     render();
   } catch (_) {
@@ -785,3 +892,4 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 }
 
 go('add');
+renderAccount();

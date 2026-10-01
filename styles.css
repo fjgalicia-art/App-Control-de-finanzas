@@ -46,7 +46,26 @@ body {
   background: var(--bg);
   padding: calc(12px + env(safe-area-inset-top)) 16px 8px;
 }
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .topbar h1 { margin: 0; font-size: 1.35rem; }
+
+.sync-pill {
+  font-size: .75rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface);
+  white-space: nowrap;
+}
+.sync-pill[data-state="ok"] { color: var(--accent); }
+.sync-pill[data-state="offline"], .sync-pill[data-state="error"] { color: var(--warn-text); background: var(--warn-bg); border-color: transparent; }
+
+.account-row { display: flex; align-items: center; gap: 12px; }
+.account-row .main { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.avatar { width: 44px; height: 44px; border-radius: 50%; }
+.sync-status { margin: 0; color: var(--muted); }
+.sync-status[data-state="ok"] { color: var(--accent); }
+.sync-status[data-state="offline"], .sync-status[data-state="error"] { color: var(--warn-text); }
 
 main { max-width: 560px; margin: 0 auto; padding: 0 16px 16px; }
 

@@ -18,7 +18,36 @@ App web (instalable en el teléfono, funciona sin internet) para registrar los g
 
 ## Dónde se guardan los datos
 
-En el almacenamiento local del navegador del teléfono (no se envían a ningún servidor). Si borras los datos del navegador se pierden, así que descarga un respaldo de vez en cuando desde **Ajustes**.
+- **Sin sesión**: solo en el teléfono (almacenamiento local del navegador).
+- **Con sesión de Google** (Ajustes → Iniciar sesión con Google): además se guardan en Firebase (Firestore), así que puedes cambiar de teléfono o usar la computadora y ver todo tu historial.
+  - La primera vez que inicias sesión en un teléfono, los gastos que ya había ahí se suben a tu cuenta (no se borra nada de la nube).
+  - Funciona sin internet: los cambios se guardan en el teléfono y se suben al reconectar.
+  - Al cerrar sesión, los datos se ocultan de ese teléfono pero siguen en tu cuenta.
+- Desde **Ajustes** también puedes descargar un respaldo `.json` o exportar a CSV.
+
+### Firebase
+
+Proyecto `mis-gastos-f3098`. La configuración está en `sync.js` (no es secreta). Estructura:
+
+```
+users/{uid}                    → { settings: { rate, cards }, updatedAt }
+users/{uid}/expenses/{gastoId} → gasto
+```
+
+Reglas de Firestore (cada usuario solo puede leer y escribir lo suyo):
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
+```
+
+En Authentication → Configuración → Dominios autorizados debe estar `fjgalicia-art.github.io`.
 
 ## Cómo usarla en el teléfono
 
@@ -34,5 +63,6 @@ Para probarla en la computadora basta con abrir `index.html`, o servir la carpet
 | --- | --- |
 | `index.html` | Estructura de las pantallas |
 | `styles.css` | Estilos (modo claro/oscuro) |
-| `app.js` | Lógica: ciclos, totales, recordatorios, almacenamiento |
+| `app.js` | Lógica: ciclos, totales, recordatorios, almacenamiento local |
+| `sync.js` | Inicio de sesión con Google y sincronización con Firebase |
 | `sw.js`, `manifest.webmanifest`, `icon.svg` | Instalación como app y uso sin conexión |
