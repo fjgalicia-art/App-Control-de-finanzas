@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f766e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Mis Gastos">
+  <title>Mis Gastos</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 id="view-title">Nuevo gasto</h1>
+  </header>
+
+  <main>
+    <!-- ============ AGREGAR ============ -->
+    <section id="view-add" class="view active">
+      <div id="reminders" class="reminders" aria-live="polite"></div>
+
+      <form id="expense-form" class="card form" autocomplete="off">
+        <div class="amount-row">
+          <button type="button" id="currency-toggle" class="currency" aria-label="Cambiar moneda" title="Tocar para cambiar a dólares">Q</button>
+          <input id="amount" type="text" inputmode="decimal" placeholder="0.00" required aria-label="Monto">
+        </div>
+        <p id="conversion-hint" class="hint" hidden></p>
+
+        <input id="desc" type="text" list="desc-suggestions" placeholder="¿En qué lo gastaste?" required aria-label="Descripción">
+        <datalist id="desc-suggestions"></datalist>
+
+        <div id="card-picker" class="chips" role="radiogroup" aria-label="Tarjeta"></div>
+
+        <label class="date-row">
+          <span>Fecha</span>
+          <input id="date" type="date" required>
+        </label>
+
+        <button type="submit" class="primary">Guardar gasto</button>
+      </form>
+
+      <h2 class="section-title">Últimos gastos</h2>
+      <ul id="recent-list" class="expense-list"></ul>
+    </section>
+
+    <!-- ============ TARJETAS ============ -->
+    <section id="view-cards" class="view">
+      <p class="muted small">Ciclo actual de cada tarjeta. Toca una para ver el detalle y meses anteriores.</p>
+      <div id="card-summary" class="card-grid"></div>
+      <div class="card total-card">
+        <span>Total ciclos actuales</span>
+        <strong id="grand-total">Q0.00</strong>
+      </div>
+
+      <h2 class="section-title">Historial por mes de pago</h2>
+      <div class="card table-wrap">
+        <table id="history-table" class="history"></table>
+      </div>
+    </section>
+
+    <!-- ============ DETALLE DE TARJETA ============ -->
+    <section id="view-detail" class="view">
+      <button type="button" class="link back" data-goto="cards">‹ Tarjetas</button>
+
+      <div class="card detail-head">
+        <div class="cycle-nav">
+          <button type="button" id="cycle-prev" class="icon-btn" aria-label="Ciclo anterior">‹</button>
+          <div class="cycle-info">
+            <strong id="detail-name"></strong>
+            <span id="detail-range" class="muted small"></span>
+          </div>
+          <button type="button" id="cycle-next" class="icon-btn" aria-label="Ciclo siguiente">›</button>
+        </div>
+        <div class="detail-total" id="detail-total">Q0.00</div>
+        <div id="detail-sub" class="muted small"></div>
+        <div id="detail-budget" class="budget" hidden>
+          <div class="bar"><span></span></div>
+          <div class="small" id="detail-budget-text"></div>
+        </div>
+      </div>
+
+      <h2 class="section-title">Últimos 6 ciclos</h2>
+      <div id="detail-chart" class="card chart"></div>
+
+      <h2 class="section-title">Rubros del ciclo</h2>
+      <ul id="detail-list" class="expense-list"></ul>
+    </section>
+
+    <!-- ============ AJUSTES ============ -->
+    <section id="view-settings" class="view">
+      <form id="settings-form" class="card form">
+        <label class="field">
+          <span>Tipo de cambio (Q por $1)</span>
+          <input id="set-rate" type="text" inputmode="decimal">
+        </label>
+        <label class="field">
+          <span>Día de pago (todas las tarjetas)</span>
+          <input id="set-pago" type="number" min="1" max="28">
+        </label>
+        <h3>Corte y presupuesto por tarjeta</h3>
+        <p class="muted small">El presupuesto es opcional: si lo llenas, verás cuánto te queda en cada ciclo.</p>
+        <div id="set-cards"></div>
+        <button type="submit" class="primary">Guardar ajustes</button>
+      </form>
+
+      <div class="card form">
+        <h3>Respaldo</h3>
+        <p class="muted small">Tus datos se guardan solo en este teléfono/navegador. Descarga un respaldo de vez en cuando.</p>
+        <button type="button" id="export-btn">Descargar respaldo (.json)</button>
+        <label class="file-btn">
+          Restaurar respaldo
+          <input id="import-input" type="file" accept="application/json,.json" hidden>
+        </label>
+        <button type="button" id="export-csv-btn">Exportar a CSV (Excel)</button>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <button type="button" data-goto="add" class="active"><span aria-hidden="true">＋</span>Agregar</button>
+    <button type="button" data-goto="cards"><span aria-hidden="true">▤</span>Tarjetas</button>
+    <button type="button" data-goto="settings"><span aria-hidden="true">⚙</span>Ajustes</button>
+  </nav>
+
+  <!-- Editar gasto -->
+  <dialog id="edit-dialog">
+    <form id="edit-form" class="form" method="dialog">
+      <h3>Editar gasto</h3>
+      <div class="amount-row">
+        <button type="button" id="edit-currency" class="currency">Q</button>
+        <input id="edit-amount" type="text" inputmode="decimal" required aria-label="Monto">
+      </div>
+      <input id="edit-desc" type="text" list="desc-suggestions" required aria-label="Descripción">
+      <div id="edit-card-picker" class="chips" role="radiogroup" aria-label="Tarjeta"></div>
+      <label class="date-row">
+        <span>Fecha</span>
+        <input id="edit-date" type="date" required>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" id="edit-delete" class="danger">Eliminar</button>
+        <span class="spacer"></span>
+        <button type="button" id="edit-cancel">Cancelar</button>
+        <button type="submit" class="primary">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
