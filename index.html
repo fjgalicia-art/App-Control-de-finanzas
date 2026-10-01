@@ -15,6 +15,7 @@
 <body>
   <header class="topbar">
     <h1 id="view-title">Nuevo gasto</h1>
+    <button type="button" id="sync-pill" class="sync-pill" data-goto="settings" hidden></button>
   </header>
 
   <main>
@@ -91,6 +92,8 @@
 
     <!-- ============ AJUSTES ============ -->
     <section id="view-settings" class="view">
+      <div id="account" class="card form account"></div>
+
       <div class="card form">
         <h3>Mis tarjetas</h3>
         <p class="muted small">Toca una tarjeta para cambiar su nombre, color, fechas o presupuesto, o para eliminarla.</p>
@@ -108,7 +111,7 @@
 
       <div class="card form">
         <h3>Respaldo</h3>
-        <p class="muted small">Tus datos se guardan solo en este teléfono/navegador. Descarga un respaldo de vez en cuando.</p>
+        <p class="muted small">Copia extra de tus gastos en un archivo, por si acaso.</p>
         <button type="button" id="export-btn">Descargar respaldo (.json)</button>
         <label class="file-btn">
           Restaurar respaldo
@@ -186,5 +189,6 @@
   <div id="toast" class="toast" role="status"></div>
 
   <script src="app.js"></script>
+  <script type="module" src="sync.js" onerror="App.setCloudUnavailable()"></script>
 </body>
 </html>
