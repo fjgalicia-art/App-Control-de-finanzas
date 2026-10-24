@@ -1,5 +1,6 @@
 // Cache para que la app funcione sin internet. Sube la versión al cambiar archivos.
-const CACHE = 'mis-gastos-v3';
+const PREFIX = 'mis-gastos-';
+const CACHE = `${PREFIX}v4`;
 const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'sync.js', 'manifest.webmanifest', 'icon.svg'];
 const FIREBASE_SDK = '/firebasejs/';
 
@@ -9,7 +10,8 @@ self.addEventListener('install', e => {
 
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys()
-    .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+    // Solo borra versiones viejas de esta app: otras apps del mismo dominio comparten este espacio.
+    .then(keys => Promise.all(keys.filter(k => k.startsWith(PREFIX) && k !== CACHE).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 
